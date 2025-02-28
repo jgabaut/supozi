@@ -328,7 +328,6 @@ double dt_stop(DumbTimer* dt);
 TestRegistry SPZ_TEST_REGISTRY__ = { .suites_count = -1, };
 
 #define register_test(registry, test_type, name, func) do { \
-    printf("suites_count: {%i}\n", registry->suites_count); \
     TestSuite* curr_suite = &(registry->suites[registry->suites_count]); \
     /* printf("%s(): Registering test {%s} to suite {%s}\n", __func__, name, curr_suite->name); */\
     if (curr_suite->test_count < MAX_TESTS) { \
