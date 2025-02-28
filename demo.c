@@ -19,6 +19,7 @@ TEST(void, test_subtraction) {
 }
 
 TEST(bool, test_foo) {
+    printf("FOO\n");
     return false;
 }
 
