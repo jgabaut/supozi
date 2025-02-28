@@ -45,15 +45,20 @@ typedef bool (*test_bool_fn)(void);
 
 #define ERROR_UNSUPPORTED_TYPE (*(int*)0)  // Passed an unexpected test type to REGISTER_TEST()
 
-#define REGISTER_TEST(name) _Generic( (name), \
-        test_void_fn: register_void_test, \
-        test_int_fn: register_int_test, \
-        test_bool_fn: register_bool_test, \
+#define REGISTER_TEST_TOREG(registry, name) _Generic( (name), \
+        test_void_fn: register_void_test_toreg, \
+        test_int_fn: register_int_test_toreg, \
+        test_bool_fn: register_bool_test_toreg, \
         default: ERROR_UNSUPPORTED_TYPE \
-        )(#name, &name)
+        )(registry, #name, &name)
+
+#define REGISTER_TEST(name) REGISTER_TEST_TOREG(&SPZ_TEST_REGISTRY__, name)
+
+#define REGISTER_SUITE_TOREG(registry, name) \
+    register_test_suite_toreg(registry, name)
 
 #define REGISTER_SUITE(name) \
-    register_test_suite(name)
+    REGISTER_SUITE_TOREG(&SPZ_TEST_REGISTRY__, name)
 
 #ifndef SPZ_NOPIPE
 #ifndef REGISTER_ALL_TESTS_PIPED
