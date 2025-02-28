@@ -502,7 +502,7 @@ CmdResult run_cmd_piped(const char* cmd) {
 }
 
 #define run_piped(x) _Generic((x), \
-        const char*: run_cmd_piped, \
+        char*: run_cmd_piped, \
         Test: run_test_piped, \
         default: ERROR_UNSUPPORTED_TYPE \
         )(x)
@@ -517,6 +517,18 @@ static inline void spz_print_stream_to_file(int source, FILE* dest)
         fprintf(dest, "%s", buffer);
     }
 }
+
+#define spz_run(x, res) do { \
+    TestResult r = run_piped(x); \
+    printf("---- stdout ----\n"); \
+    spz_print_stream_to_file(r.stdout_pipe, stdout); \
+    printf("---- stderr ----\n"); \
+    spz_print_stream_to_file(r.stderr_pipe, stdout); \
+    close(r.stdout_pipe); \
+    close(r.stderr_pipe); \
+    *res = r.exit_code; \
+} while (0)
+
 #endif // SPZ_NOPIPE
 
 int run_suite(TestSuite suite, int piped) {
