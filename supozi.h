@@ -59,6 +59,12 @@ typedef bool (*test_bool_fn)(void);
 #ifndef REGISTER_ALL_TESTS_PIPED
 #define REGISTER_ALL_TESTS_PIPED 1
 #endif // REGISTER_ALL_TESTS_PIPED
+#ifndef SPZ_STDOUT_SUFFIX
+#define SPZ_STDOUT_SUFFIX ".stdout"
+#endif // SPZ_STDOUT_SUFFIX
+#ifndef SPZ_STDERR_SUFFIX
+#define SPZ_STDERR_SUFFIX ".stderr"
+#endif // SPZ_STDERR_SUFFIX
 #else
 #ifndef REGISTER_ALL_TESTS_PIPED
 #define REGISTER_ALL_TESTS_PIPED 0
@@ -92,7 +98,7 @@ typedef bool (*test_bool_fn)(void);
                 spz_usage(argv[0]); \
                 return 0; \
             } else if (!strcmp(argv[1], "record")) { \
-                return run_tests_record(REGISTER_ALL_TESTS_PIPED, 1); \
+                return run_tests_record(REGISTER_ALL_TESTS_PIPED, 1, SPZ_STDOUT_SUFFIX, SPZ_STDERR_SUFFIX); \
             } else { \
                 char namebuf[FILENAME_MAX] = {0}; \
                 for (int i=0; i < test_registry.suites_count+1; i++) { \
@@ -151,7 +157,6 @@ typedef bool (*test_bool_fn)(void);
         printf("  SUITE           name of suite to run\n"); \
         printf("  SUITE::TEST     name of test to run from given suite\n"); \
         printf("\nSubcommands:\n\n"); \
-        printf("  record          record all successful tests\n"); \
         printf("  help            show this message\n"); \
     } \
     /* Automatically generate the main function */ \
@@ -162,8 +167,6 @@ typedef bool (*test_bool_fn)(void);
             if (!strcmp(argv[1], "help")) { \
                 spz_usage(argv[0]); \
                 return 0; \
-            } else if (!strcmp(argv[1], "record")) { \
-                return run_tests_record(REGISTER_ALL_TESTS_PIPED, 1); \
             } else { \
                 char namebuf[FILENAME_MAX] = {0}; \
                 for (int i=0; i < test_registry.suites_count+1; i++) { \
@@ -245,7 +248,7 @@ int run_suite(TestSuite suite, int piped);
 int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix);
 // Function to run all registered tests
 int run_tests(int piped);
-int run_tests_record(int piped, int record);
+int run_tests_record(int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix);
 
 #ifndef SPZ_NOPIPE
 
@@ -572,15 +575,15 @@ int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_
 }
 
 int run_tests(int piped) {
-    return run_tests_record(piped, 0);
+    return run_tests_record(piped, 0, NULL, NULL);
 }
 
-int run_tests_record(int piped, int record) {
+int run_tests_record(int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix) {
     int failures = 0;
     printf("Running all test suites...\n");
     for (int i = 0; i < test_registry.suites_count+1; i++) {
         printf("[  Suite  ] suite %s, %d tests\n", test_registry.suites[i].name, test_registry.suites[i].test_count);
-        int res = run_suite_record(test_registry.suites[i], piped, record, NULL, NULL);
+        int res = run_suite_record(test_registry.suites[i], piped, record, stdout_record_suffix, stderr_record_suffix);
         if (res > 0) {
             printf("[ FAILED  ] Failures: {%d}\n", res);
         } else {
