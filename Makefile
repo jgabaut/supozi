@@ -1,6 +1,6 @@
 .PHONY = all clean rebuild
 CCOMP ?= gcc
-CFLAGS = -Wall -Werror -fsanitize=undefined -fsanitize=address -std=gnu11
+CFLAGS = -Wall -Werror -fsanitize=undefined -fsanitize=address -g -std=gnu11
 LDFLAGS =
 TARGET = ./demo
 
