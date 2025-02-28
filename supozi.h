@@ -101,8 +101,8 @@ typedef bool (*test_bool_fn)(void);
                 return run_tests_record(REGISTER_ALL_TESTS_PIPED, 1, SPZ_STDOUT_SUFFIX, SPZ_STDERR_SUFFIX); \
             } else { \
                 char namebuf[FILENAME_MAX] = {0}; \
-                for (int i=0; i < test_registry.suites_count+1; i++) { \
-                    TestSuite suite = test_registry.suites[i]; \
+                for (int i=0; i < SPZ_TEST_REGISTRY__.suites_count+1; i++) { \
+                    TestSuite suite = SPZ_TEST_REGISTRY__.suites[i]; \
                     if (!strcmp(argv[1], suite.name)) { \
                         printf("%s: running suite %s:\n", argv[0], suite.name); \
                         int res = run_suite(suite, REGISTER_ALL_TESTS_PIPED); \
@@ -169,8 +169,8 @@ typedef bool (*test_bool_fn)(void);
                 return 0; \
             } else { \
                 char namebuf[FILENAME_MAX] = {0}; \
-                for (int i=0; i < test_registry.suites_count+1; i++) { \
-                    TestSuite suite = test_registry.suites[i]; \
+                for (int i=0; i < SPZ_TEST_REGISTRY__.suites_count+1; i++) { \
+                    TestSuite suite = SPZ_TEST_REGISTRY__.suites[i]; \
                     if (!strcmp(argv[1], suite.name)) { \
                         printf("%s: running suite %s:\n", argv[0], suite.name); \
                         int res = run_suite(suite, REGISTER_ALL_TESTS_PIPED); \
@@ -229,7 +229,7 @@ typedef struct TestRegistry {
     int suites_count;
 } TestRegistry;
 
-extern TestRegistry test_registry;
+extern TestRegistry SPZ_TEST_REGISTRY__;
 
 #ifndef _WIN32
 #define SPZ_PATH_SEPARATOR "/"
@@ -237,18 +237,27 @@ extern TestRegistry test_registry;
 #define SPZ_PATH_SEPARATOR "\\"
 #endif // _WIN32
 
-// Functions to register tests explicitly
+// Functions to register tests explicitly to global SPZ_TEST_REGISTRY__
 void register_void_test(const char* name, test_void_fn func);
 void register_int_test(const char* name, test_int_fn func);
 void register_bool_test(const char* name, test_bool_fn func);
 void register_test_suite(const char* name);
-// Function to run all tests in a suite
+// Functions to register tests explicitly to a specific registry
+void register_bool_test_toreg(TestRegistry *tr, const char* name, test_bool_fn func);
+void register_int_test_toreg(TestRegistry *tr, const char* name, test_int_fn func);
+void register_void_test_toreg(TestRegistry *tr, const char* name, test_void_fn func);
+void register_test_suite_toreg(TestRegistry *tr, const char* name);
+// Function to run a single test (see also run_test_piped())
 int run_test(Test t);
+// Functions to run all tests in a suite
 int run_suite(TestSuite suite, int piped);
 int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix);
-// Function to run all registered tests
+// Functions to run all tests in global SPZ_TEST_REGISTRY__
 int run_tests(int piped);
 int run_tests_record(int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix);
+// Functions to run all tests in a specific registry
+int run_testregistry(TestRegistry tr, int piped);
+int run_testregistry_record(TestRegistry tr, int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix);
 
 #ifndef SPZ_NOPIPE
 
@@ -260,7 +269,6 @@ typedef struct TestResult {
 } TestResult;
 
 TestResult run_test_piped(Test t); // Caller must close TestResult.stdout_pipe and TestResult.stderr_pipe
-                                   //
 #endif // SPZ_NOPIPE
 
 #ifndef SPZ_NOTIMER
@@ -317,10 +325,11 @@ double dt_stop(DumbTimer* dt);
 
 #ifdef SPZ_IMPLEMENTATION
 
-TestRegistry test_registry = { .suites_count = -1, };
+TestRegistry SPZ_TEST_REGISTRY__ = { .suites_count = -1, };
 
-#define register_test(test_type, name, func) do { \
-    TestSuite* curr_suite = &(test_registry.suites[test_registry.suites_count]); \
+#define register_test(registry, test_type, name, func) do { \
+    printf("suites_count: {%i}\n", registry->suites_count); \
+    TestSuite* curr_suite = &(registry->suites[registry->suites_count]); \
     /* printf("%s(): Registering test {%s} to suite {%s}\n", __func__, name, curr_suite->name); */\
     if (curr_suite->test_count < MAX_TESTS) { \
         curr_suite->tests[curr_suite->test_count].type = _Generic(((test_type)0), \
@@ -337,25 +346,41 @@ TestRegistry test_registry = { .suites_count = -1, };
     } \
 } while (0)
 
+void register_bool_test_toreg(TestRegistry *tr, const char* name, test_bool_fn func) {
+    register_test(tr, bool, name, func);
+}
+
+void register_void_test_toreg(TestRegistry *tr, const char* name, test_void_fn func) {
+    register_test(tr, void, name, func);
+}
+
+void register_int_test_toreg(TestRegistry *tr, const char* name, test_int_fn func) {
+    register_test(tr, int, name, func);
+}
+
 void register_bool_test(const char* name, test_bool_fn func) {
-    register_test(bool, name, func);
+    register_bool_test_toreg(&SPZ_TEST_REGISTRY__, name, func);
 }
 
 void register_void_test(const char* name, test_void_fn func) {
-    register_test(void, name, func);
+    register_void_test_toreg(&SPZ_TEST_REGISTRY__, name, func);
 }
 
 void register_int_test(const char* name, test_int_fn func) {
-    register_test(int, name, func);
+    register_int_test_toreg(&SPZ_TEST_REGISTRY__, name, func);
 }
 
-void register_test_suite(const char* name) {
-    if (test_registry.suites_count < MAX_SUITES) {
-        test_registry.suites_count++;
-        test_registry.suites[test_registry.suites_count].name = name;
+void register_test_suite_toreg(TestRegistry *tr, const char* name) {
+    if (tr->suites_count < MAX_SUITES) {
+        tr->suites_count++;
+        tr->suites[tr->suites_count].name = name;
     } else {
         fprintf(stderr, "%s(): can't accept suite {%s}, registry is full\n", __func__, name);
     }
+}
+
+void register_test_suite(const char* name) {
+    register_test_suite_toreg(&SPZ_TEST_REGISTRY__, name);
 }
 
 int run_test(Test t) {
@@ -579,11 +604,20 @@ int run_tests(int piped) {
 }
 
 int run_tests_record(int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix) {
+    return run_testregistry_record(SPZ_TEST_REGISTRY__, piped, record, stdout_record_suffix, stderr_record_suffix);
+}
+
+int run_testregistry(TestRegistry tr, int piped) {
+    return run_testregistry_record(tr, piped, 0, NULL, NULL);
+}
+
+int run_testregistry_record(TestRegistry tr, int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix) {
     int failures = 0;
     printf("Running all test suites...\n");
-    for (int i = 0; i < test_registry.suites_count+1; i++) {
-        printf("[  Suite  ] suite %s, %d tests\n", test_registry.suites[i].name, test_registry.suites[i].test_count);
-        int res = run_suite_record(test_registry.suites[i], piped, record, stdout_record_suffix, stderr_record_suffix);
+    for (int i = 0; i < tr.suites_count+1; i++) {
+        TestSuite suite = tr.suites[i];
+        printf("[  Suite  ] suite %s, %d tests\n", suite.name, suite.test_count);
+        int res = run_suite_record(suite, piped, record, stdout_record_suffix, stderr_record_suffix);
         if (res > 0) {
             printf("[ FAILED  ] Failures: {%d}\n", res);
         } else {
