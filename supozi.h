@@ -29,7 +29,7 @@
 
 #define SPZ_MAJOR 0 /**< Represents current major release.*/
 #define SPZ_MINOR 1 /**< Represents current minor release.*/
-#define SPZ_PATCH 0 /**< Represents current patch release.*/
+#define SPZ_PATCH 1 /**< Represents current patch release.*/
 
 static const int SPZ_API_VERSION_INT =
     (SPZ_MAJOR * 1000000 + SPZ_MINOR * 10000 + SPZ_PATCH * 100);
@@ -71,10 +71,30 @@ typedef bool (*test_bool_fn)(void);
         REGISTER_SUITE("default"); \
         TEST_LIST \
     } \
+    static void spz_usage(const char* progname) { \
+        if (!progname) return; \
+        printf("Usage: %s [subcommand]\n", progname); \
+        printf("  [subcommand]  record, help\n"); \
+        printf("  record: record all successful tests\n  help: show this message\n"); \
+    } \
     /* Automatically generate the main function */ \
-    int main(void) { \
+    int main(int argc, char** argv) { \
+        printf("%s: using supozi v%i.%i.%i\n", argv[0], SPZ_MAJOR, SPZ_MINOR, SPZ_PATCH); \
         register_all_tests(); \
-        return run_tests(REGISTER_ALL_TESTS_PIPED); \
+        if (argc > 1) { \
+            if (!strcmp(argv[1], "help")) { \
+                spz_usage(argv[0]); \
+                return 0; \
+            } else if (!strcmp(argv[1], "record")) { \
+                return run_tests_record(REGISTER_ALL_TESTS_PIPED, 1); \
+            } else { \
+                printf("%s: unknown argument: %s\n", argv[0], argv[1]); \
+                spz_usage(argv[0]); \
+                return 1; \
+            } \
+        } else { \
+            return run_tests(REGISTER_ALL_TESTS_PIPED); \
+        } \
     }
 
 typedef union test_fn {
@@ -110,6 +130,12 @@ typedef struct TestRegistry {
 
 extern TestRegistry test_registry;
 
+#ifndef _WIN32
+#define SPZ_PATH_SEPARATOR "/"
+#else
+#define SPZ_PATH_SEPARATOR "\\"
+#endif // _WIN32
+
 // Functions to register tests explicitly
 void register_void_test(const char* name, test_void_fn func);
 void register_int_test(const char* name, test_int_fn func);
@@ -118,8 +144,10 @@ void register_test_suite(const char* name);
 // Function to run all tests in a suite
 int run_test(Test t);
 int run_suite(TestSuite suite, int piped);
+int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix);
 // Function to run all registered tests
 int run_tests(int piped);
+int run_tests_record(int piped, int record);
 
 #ifndef SPZ_NOPIPE
 
@@ -319,7 +347,22 @@ TestResult run_test_piped(Test t) {
 }
 #endif // SPZ_NOPIPE
 
+static inline void spz_print_stream_to_file(int source, FILE* dest)
+{
+    if (!dest) return;
+    char buffer[256];
+    ssize_t count;
+    while ((count = read(source, buffer, sizeof(buffer) - 1)) > 0) {
+        buffer[count] = '\0';
+        fprintf(dest, "%s", buffer);
+    }
+}
+
 int run_suite(TestSuite suite, int piped) {
+    return run_suite_record(suite, piped, 0, NULL, NULL);
+}
+
+int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix) {
     int failures = 0;
     int successes = 0;
 #ifndef SPZ_NOPIPE
@@ -348,6 +391,30 @@ int run_suite(TestSuite suite, int piped) {
             } else {
                 printf("\033[0;32mok\033[0m\n");
                 successes++;
+                if (record > 0) {
+                    char pathbuf[FILENAME_MAX] = {0};
+                    const char* stdout_pb_suffix = NULL;
+                    if (!stdout_record_suffix) {
+                        stdout_pb_suffix = ".stdout";
+                    } else {
+                        stdout_pb_suffix = stdout_record_suffix;
+                    }
+                    sprintf(pathbuf, ".%s%s%s", SPZ_PATH_SEPARATOR, suite.tests[i].name, stdout_pb_suffix);
+                    FILE* stdout_record_file = fopen(pathbuf, "w");
+                    spz_print_stream_to_file(res.stdout_pipe, stdout_record_file);
+                    fclose(stdout_record_file);
+
+                    const char* stderr_pb_suffix = NULL;
+                    if (!stderr_record_suffix) {
+                        stderr_pb_suffix = ".stderr";
+                    } else {
+                        stderr_pb_suffix = stderr_record_suffix;
+                    }
+                    sprintf(pathbuf, ".%s%s%s", SPZ_PATH_SEPARATOR, suite.tests[i].name, stderr_pb_suffix);
+                    FILE* stderr_record_file = fopen(pathbuf, "w");
+                    spz_print_stream_to_file(res.stderr_pipe, stderr_record_file);
+                    fclose(stderr_record_file);
+                }
                 close(res.stdout_pipe);
                 close(res.stderr_pipe);
             }
@@ -383,19 +450,12 @@ int run_suite(TestSuite suite, int piped) {
     if (piped > 0) {
         printf("\nfailures:\n\n");
         for (int i=0; i < failures; i++) {
-            char buffer[256];
-            ssize_t count;
             printf("---- %s::%s stdout ----\n", suite.name, failed[i]);
-            while ((count = read(error_streams[i][0], buffer, sizeof(buffer) - 1)) > 0) {
-                buffer[count] = '\0';
-                printf("%s", buffer);
-            }
+            spz_print_stream_to_file(error_streams[i][0], stdout);
 
             printf("---- %s::%s stderr ----\n", suite.name, failed[i]);
-            while ((count = read(error_streams[i][1], buffer, sizeof(buffer) - 1)) > 0) {
-                buffer[count] = '\0';
-                printf("%s", buffer);
-            }
+            spz_print_stream_to_file(error_streams[i][1], stdout);
+
             close(error_streams[i][0]);
             close(error_streams[i][1]);
         }
@@ -414,11 +474,15 @@ int run_suite(TestSuite suite, int piped) {
 }
 
 int run_tests(int piped) {
+    return run_tests_record(piped, 0);
+}
+
+int run_tests_record(int piped, int record) {
     int failures = 0;
     printf("Running all test suites...\n");
     for (int i = 0; i < test_registry.suites_count+1; i++) {
         printf("[  Suite  ] suite %s, %d tests\n", test_registry.suites[i].name, test_registry.suites[i].test_count);
-        int res = run_suite(test_registry.suites[i], piped);
+        int res = run_suite_record(test_registry.suites[i], piped, record, NULL, NULL);
         if (res > 0) {
             printf("[ FAILED  ] Failures: {%d}\n", res);
         } else {
