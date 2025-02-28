@@ -269,6 +269,9 @@ typedef struct TestResult {
 } TestResult;
 
 TestResult run_test_piped(Test t); // Caller must close TestResult.stdout_pipe and TestResult.stderr_pipe
+
+typedef TestResult CmdResult;
+CmdResult run_cmd_piped(const char* cmd); // Caller must close CmdResult.stdout_pipe and CmdResult.stderr_pipe
 #endif // SPZ_NOPIPE
 
 #ifndef SPZ_NOTIMER
@@ -408,68 +411,96 @@ int run_test(Test t) {
 }
 
 #ifndef SPZ_NOPIPE
-TestResult run_test_piped(Test t) {
-    int stdout_pipe[2], stderr_pipe[2];
-    if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1) {
-        perror("pipe");
-        exit(EXIT_FAILURE);
-    }
-
-    pid_t pid = fork();
-    if (pid == -1) {
-        perror("fork");
-        exit(EXIT_FAILURE);
-    }
-
-    if (pid == 0) { // Child process
-        close(stdout_pipe[0]);  // Close read end of stdout pipe
-        close(stderr_pipe[0]);  // Close read end of stderr pipe
-
-        dup2(stdout_pipe[1], STDOUT_FILENO); // Redirect stdout to pipe
-        dup2(stderr_pipe[1], STDERR_FILENO); // Redirect stderr to pipe
-
-        close(stdout_pipe[1]); // Close write end after duplicating
-        close(stderr_pipe[1]);
-
-        int res = run_test(t);
-        exit(res);
-    } else { // Parent process
-        close(stdout_pipe[1]); // Close write end of stdout pipe
-        close(stderr_pipe[1]); // Close write end of stderr pipe
-
-        // Wait for child process to finish
-        int status;
-        if (waitpid(pid, &status, 0) == -1) {
-            fprintf(stderr, "%s(): waitpid() failed\n", __func__);
-            close(stdout_pipe[0]);
-            close(stderr_pipe[0]);
-            return (TestResult) {
-                .exit_code = -1,
-                .stdout_pipe = -1,
-                .stderr_pipe = -1,
-                .signum = -1,
-            };
-        };
-
-        int es = -1;
-        if ( WIFEXITED(status) ) {
-            es = WEXITSTATUS(status);
-        }
-
-        int signal = -1;
-        if (WIFSIGNALED(status)) {
-            signal = WTERMSIG(status);
-            printf("%s(): process was terminated by signal %i\n", __func__, signal);
-        }
-
-        return (TestResult) {
-            .exit_code = es,
-            .stdout_pipe = stdout_pipe[0], // Must be closed by caller
-            .stderr_pipe = stderr_pipe[0], // Must be closed by caller
-            .signum = signal,
-        };
-    }
+static inline int spz_call_cmd(const char* x) {
+    return execlp(x, x, (char*) NULL);
 }
+
+static inline int spz_call_test(Test x) {
+    return run_test(x);
+}
+
+#define run_piped__(retType, x) do { \
+    int stdout_pipe[2], stderr_pipe[2]; \
+    if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1) { \
+        perror("pipe"); \
+        exit(EXIT_FAILURE); \
+    } \
+    pid_t pid = fork(); \
+    if (pid == -1) { \
+        perror("fork"); \
+        exit(EXIT_FAILURE); \
+    } \
+    if (pid == 0) { \
+        /* Child process*/ \
+        /* Close read end of stdout pipe */ \
+        close(stdout_pipe[0]);  \
+        /* Close read end of stderr pipe */ \
+        close(stderr_pipe[0]);  \
+        /* Redirect stdout to pipe */ \
+        dup2(stdout_pipe[1], STDOUT_FILENO); \
+        /* Redirect stderr to pipe */ \
+        dup2(stderr_pipe[1], STDERR_FILENO); \
+        /* Close write end after duplicating */ \
+        close(stdout_pipe[1]); \
+        close(stderr_pipe[1]); \
+        int res = _Generic((x), \
+                const char*: spz_call_cmd, \
+                Test: spz_call_test, \
+                default: ERROR_UNSUPPORTED_TYPE \
+                )(x); \
+        exit(res); \
+    } else { \
+        /* Parent process */ \
+        /* Close write end of stdout pipe */ \
+        close(stdout_pipe[1]); \
+        /* Close write end of stderr pipe */ \
+        close(stderr_pipe[1]); \
+        /* Wait for child process to finish */ \
+        int status; \
+        if (waitpid(pid, &status, 0) == -1) { \
+            fprintf(stderr, "%s(): waitpid() failed\n", __func__); \
+            close(stdout_pipe[0]); \
+            close(stderr_pipe[0]); \
+            return (retType) { \
+                .exit_code = -1, \
+                .stdout_pipe = -1, \
+                .stderr_pipe = -1, \
+                .signum = -1, \
+            }; \
+        }; \
+        int es = -1; \
+        if ( WIFEXITED(status) ) { \
+            es = WEXITSTATUS(status); \
+        } \
+        int signal = -1; \
+        if (WIFSIGNALED(status)) { \
+            signal = WTERMSIG(status); \
+            printf("%s(): process was terminated by signal %i\n", __func__, signal); \
+        } \
+        return (retType) { \
+            .exit_code = es, \
+            /* Must be closed by caller */ \
+            .stdout_pipe = stdout_pipe[0], \
+            /* Must be closed by caller */ \
+            .stderr_pipe = stderr_pipe[0], \
+            .signum = signal, \
+        }; \
+    } \
+} while(0)
+
+TestResult run_test_piped(Test t) {
+    run_piped__(TestResult, t);
+}
+
+CmdResult run_cmd_piped(const char* cmd) {
+    run_piped__(CmdResult, cmd);
+}
+
+#define run_piped(x) _Generic((x), \
+        const char*: run_cmd_piped, \
+        Test: run_test_piped, \
+        default: ERROR_UNSUPPORTED_TYPE \
+        )(x)
 
 static inline void spz_print_stream_to_file(int source, FILE* dest)
 {
@@ -680,4 +711,5 @@ double dt_stop(DumbTimer* dt)
 
 // Cleanup
 #undef register_test
+#undef run_piped__
 #endif // SPZ_IMPLEMENTATION
