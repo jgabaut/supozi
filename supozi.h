@@ -21,10 +21,10 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 #ifndef SPZ_NOPIPE
 #include <unistd.h>
 #include <sys/wait.h>
-#include <string.h>
 #endif // SPZ_NOPIPE
 
 #define SPZ_MAJOR 0 /**< Represents current major release.*/
@@ -65,6 +65,7 @@ typedef bool (*test_bool_fn)(void);
 #endif // REGISTER_ALL_TESTS_PIPED
 #endif // SPZ_NOPIPE
 
+#ifndef SPZ_NOPIPE
 // Macro to register all tests automatically
 #define REGISTER_ALL_TESTS() \
     static void register_all_tests(void) { \
@@ -73,9 +74,14 @@ typedef bool (*test_bool_fn)(void);
     } \
     static void spz_usage(const char* progname) { \
         if (!progname) return; \
-        printf("Usage: %s [subcommand]\n", progname); \
-        printf("  [subcommand]  record, help\n"); \
-        printf("  record: record all successful tests\n  help: show this message\n"); \
+        printf("Usage: %s [subcommand | SUITE | SUITE::TEST]\n", progname); \
+        printf("\nArguments:\n\n"); \
+        printf("  [subcommand]    record, help\n"); \
+        printf("  SUITE           name of suite to run\n"); \
+        printf("  SUITE::TEST     name of test to run from given suite\n"); \
+        printf("\nSubcommands:\n\n"); \
+        printf("  record          record all successful tests\n"); \
+        printf("  help            show this message\n"); \
     } \
     /* Automatically generate the main function */ \
     int main(int argc, char** argv) { \
@@ -88,6 +94,41 @@ typedef bool (*test_bool_fn)(void);
             } else if (!strcmp(argv[1], "record")) { \
                 return run_tests_record(REGISTER_ALL_TESTS_PIPED, 1); \
             } else { \
+                char namebuf[FILENAME_MAX] = {0}; \
+                for (int i=0; i < test_registry.suites_count+1; i++) { \
+                    TestSuite suite = test_registry.suites[i]; \
+                    if (!strcmp(argv[1], suite.name)) { \
+                        printf("%s: running suite %s:\n", argv[0], suite.name); \
+                        int res = run_suite(suite, REGISTER_ALL_TESTS_PIPED); \
+                        return res; \
+                    } \
+                    for (int j=0; j < suite.test_count+1; j++) { \
+                        Test t = suite.tests[j]; \
+                        sprintf(namebuf, "%s::%s", suite.name, t.name); \
+                        if (!strcmp(argv[1], namebuf)) { \
+                            printf("%s: running test %s::%s: ", argv[0], suite.name, t.name); \
+                            fflush(stdout); \
+                            int res = -1; \
+                            TestResult tr = {0}; \
+                            if (REGISTER_ALL_TESTS_PIPED == 1) { \
+                                tr = run_test_piped(t); \
+                                res = tr.exit_code; \
+                            } else { \
+                                res = run_test(t); \
+                            } \
+                            printf("%s\n", (res == 0 ? "\033[0;32mSUCCESS\033[0m" : "\033[0;31mFAILURE\033[0m")); \
+                            if (REGISTER_ALL_TESTS_PIPED == 1) { \
+                                printf("---- %s::%s stdout ----\n", suite.name, t.name); \
+                                spz_print_stream_to_file(tr.stdout_pipe, stdout); \
+                                printf("---- %s::%s stderr ----\n", suite.name, t.name); \
+                                spz_print_stream_to_file(tr.stderr_pipe, stdout); \
+                                close(tr.stdout_pipe); \
+                                close(tr.stderr_pipe); \
+                            } \
+                            return res; \
+                        } \
+                    } \
+                } \
                 printf("%s: unknown argument: %s\n", argv[0], argv[1]); \
                 spz_usage(argv[0]); \
                 return 1; \
@@ -96,6 +137,63 @@ typedef bool (*test_bool_fn)(void);
             return run_tests(REGISTER_ALL_TESTS_PIPED); \
         } \
     }
+#else
+#define REGISTER_ALL_TESTS() \
+    static void register_all_tests(void) { \
+        REGISTER_SUITE("default"); \
+        TEST_LIST \
+    } \
+    static void spz_usage(const char* progname) { \
+        if (!progname) return; \
+        printf("Usage: %s [subcommand | SUITE | SUITE::TEST]\n", progname); \
+        printf("\nArguments:\n\n"); \
+        printf("  [subcommand]    record, help\n"); \
+        printf("  SUITE           name of suite to run\n"); \
+        printf("  SUITE::TEST     name of test to run from given suite\n"); \
+        printf("\nSubcommands:\n\n"); \
+        printf("  record          record all successful tests\n"); \
+        printf("  help            show this message\n"); \
+    } \
+    /* Automatically generate the main function */ \
+    int main(int argc, char** argv) { \
+        printf("%s: using supozi v%i.%i.%i\n", argv[0], SPZ_MAJOR, SPZ_MINOR, SPZ_PATCH); \
+        register_all_tests(); \
+        if (argc > 1) { \
+            if (!strcmp(argv[1], "help")) { \
+                spz_usage(argv[0]); \
+                return 0; \
+            } else if (!strcmp(argv[1], "record")) { \
+                return run_tests_record(REGISTER_ALL_TESTS_PIPED, 1); \
+            } else { \
+                char namebuf[FILENAME_MAX] = {0}; \
+                for (int i=0; i < test_registry.suites_count+1; i++) { \
+                    TestSuite suite = test_registry.suites[i]; \
+                    if (!strcmp(argv[1], suite.name)) { \
+                        printf("%s: running suite %s:\n", argv[0], suite.name); \
+                        int res = run_suite(suite, REGISTER_ALL_TESTS_PIPED); \
+                        return res; \
+                    } \
+                    for (int j=0; j < suite.test_count+1; j++) { \
+                        Test t = suite.tests[j]; \
+                        sprintf(namebuf, "%s::%s", suite.name, t.name); \
+                        if (!strcmp(argv[1], namebuf)) { \
+                            printf("%s: running test %s::%s: ", argv[0], suite.name, t.name); \
+                            fflush(stdout); \
+                            int res = run_test(t); \
+                            printf("%s\n", (res == 0 ? "\033[0;32mSUCCESS\033[0m" : "\033[0;31mFAILURE\033[0m")); \
+                            return res; \
+                        } \
+                    } \
+                } \
+                printf("%s: unknown argument: %s\n", argv[0], argv[1]); \
+                spz_usage(argv[0]); \
+                return 1; \
+            } \
+        } else { \
+            return run_tests(REGISTER_ALL_TESTS_PIPED); \
+        } \
+    }
+#endif // SPZ_NOPIPE
 
 typedef union test_fn {
     test_void_fn void_fn;
@@ -345,7 +443,6 @@ TestResult run_test_piped(Test t) {
         };
     }
 }
-#endif // SPZ_NOPIPE
 
 static inline void spz_print_stream_to_file(int source, FILE* dest)
 {
@@ -357,6 +454,7 @@ static inline void spz_print_stream_to_file(int source, FILE* dest)
         fprintf(dest, "%s", buffer);
     }
 }
+#endif // SPZ_NOPIPE
 
 int run_suite(TestSuite suite, int piped) {
     return run_suite_record(suite, piped, 0, NULL, NULL);
