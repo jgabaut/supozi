@@ -518,6 +518,42 @@ static inline void spz_print_stream_to_file(int source, FILE* dest)
     }
 }
 
+static inline int spz_compare_stream_to_file(int source, const char *filepath)
+{
+    if (!filepath) return 0;
+
+    // Open the file for comparison
+    FILE *file = fopen(filepath, "rb");
+    if (!file) {
+        perror("Failed to open file");
+        return -1; // error opening file
+    }
+
+    // Buffer for reading from both the pipe and the file
+    char pipe_buffer[256];
+    char file_buffer[256];
+    ssize_t pipe_count, file_count;
+
+    // Compare the contents
+    while ((pipe_count = read(source, pipe_buffer, sizeof(pipe_buffer))) > 0) {
+        file_count = fread(file_buffer, 1, pipe_count, file);
+
+        if (pipe_count != file_count || memcmp(pipe_buffer, file_buffer, pipe_count) != 0) {
+            fclose(file);
+            return 0; // contents don't match
+        }
+    }
+
+    // Check if there are any remaining bytes in the file
+    if (fread(file_buffer, 1, sizeof(file_buffer), file) > 0) {
+        fclose(file);
+        return 0; // the file has more data left
+    }
+
+    fclose(file);
+    return 1; // contents match
+}
+
 #define spz_run(x, res) do { \
     TestResult r = run_piped(x); \
     printf("---- stdout ----\n"); \
@@ -527,6 +563,61 @@ static inline void spz_print_stream_to_file(int source, FILE* dest)
     close(r.stdout_pipe); \
     close(r.stderr_pipe); \
     *res = r.exit_code; \
+} while (0)
+
+#define spz_run_checked(x, res, stdout_filename, stderr_filename) do { \
+    TestResult r = run_piped(x); \
+    if (r.exit_code == 0) { \
+        int mismatch = 0; \
+        int stdout_res = spz_compare_stream_to_file(r.stdout_pipe, stdout_filename); \
+        switch (stdout_res) { \
+            case 0: { \
+                printf("stdout mismatch\n"); \
+                mismatch += 1; \
+            } \
+            break; \
+            case 1: { /* Matched */ } \
+            break; \
+            case -1: { \
+                printf("stdout record {%s} not found\n", stdout_filename); \
+                mismatch -= 3; \
+            } \
+            break; \
+            default: { \
+                printf("unexpected result: {%i}\n", stdout_res); \
+                mismatch -= 10; \
+            } \
+            break; \
+        } \
+        int stderr_res = spz_compare_stream_to_file(r.stderr_pipe, stderr_filename); \
+        switch (stderr_res) { \
+            case 0: { \
+                printf("stderr mismatch\n"); \
+                mismatch += 2; \
+            } \
+            break; \
+            case 1: { /* Matched */ } \
+            break; \
+            case -1: { \
+                printf("stderr record {%s} not found\n", stderr_filename); \
+                mismatch -= 3; \
+            } \
+            break; \
+            default: { \
+                printf("unexpected result: {%i}\n", stderr_res); \
+                mismatch -= 10; \
+            } \
+            break; \
+        } \
+        close(r.stdout_pipe); \
+        close(r.stderr_pipe); \
+        *res = mismatch; \
+    } else { \
+        printf("failure, exit code: {%i}\n", r.exit_code); \
+        close(r.stdout_pipe); \
+        close(r.stderr_pipe); \
+        *res = r.exit_code; \
+    } \
 } while (0)
 
 #endif // SPZ_NOPIPE
