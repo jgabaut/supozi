@@ -486,7 +486,6 @@ static inline int tempfile_fd(TempFile t)
 {
     if (!t.tmp) {
         fprintf(stderr, "%s(): fp was NULL\n", __func__);
-        exit(EXIT_FAILURE);
         return -1;
     }
     return fileno(t.tmp);
@@ -496,13 +495,11 @@ static inline bool tempfile_close(TempFile *t)
 {
     if (!t) {
         fprintf(stderr, "%s(): t was NULL\n", __func__);
-        exit(EXIT_FAILURE);
         return false;
     }
 
     if (!t->tmp) {
         fprintf(stderr, "%s(): fp was NULL\n", __func__);
-        exit(EXIT_FAILURE);
         return false;
     }
     int close_res = fclose(t->tmp);
@@ -536,9 +533,19 @@ static inline bool tempfile_close(TempFile *t)
     if (pid == 0) { \
         /* Child process*/ \
         /* Redirect stdout to pipe */ \
-        dup2(tempfile_fd(stdout_tmpfile), STDOUT_FILENO); \
+        int stdout_fd = tempfile_fd(stdout_tmpfile); \
+        if (stdout_fd == -1) { \
+            perror("failed getting the file descriptor for stdout_tmpfile"); \
+            exit(EXIT_FAILURE); \
+        } \
+        dup2(stdout_fd, STDOUT_FILENO); \
         /* Redirect stderr to pipe */ \
-        dup2(tempfile_fd(stderr_tmpfile), STDERR_FILENO); \
+        int stderr_fd = tempfile_fd(stderr_tmpfile); \
+        if (stderr_fd == -1) { \
+            perror("failed getting the file descriptor for stderr_tmpfile"); \
+            exit(EXIT_FAILURE); \
+        } \
+        dup2(stderr_fd, STDERR_FILENO); \
         int res = _Generic((x), \
                 const char*: spz_call_cmd, \
                 Test: spz_call_test, \
@@ -553,8 +560,12 @@ static inline bool tempfile_close(TempFile *t)
         int status; \
         if (waitpid(pid, &status, 0) == -1) { \
             fprintf(stderr, "%s(): waitpid() failed\n", __func__); \
-            tempfile_close(&stdout_tmpfile); \
-            tempfile_close(&stderr_tmpfile); \
+            if (!tempfile_close(&stdout_tmpfile)) { \
+                perror("failed closing stdout_tmpfile"); \
+            } \
+            if (!tempfile_close(&stderr_tmpfile)) { \
+                perror("failed closing stderr_tmpfile"); \
+            } \
             return (retType) { \
                 .exit_code = -1, \
                 .stdout_fp = NULL, \
