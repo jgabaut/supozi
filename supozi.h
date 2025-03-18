@@ -278,10 +278,10 @@ typedef struct TestResult {
     int signum;
 } TestResult;
 
-TestResult run_test_piped(Test t); // Caller must close TestResult.stdout_pipe and TestResult.stderr_pipe
+TestResult run_test_piped(Test t); // Caller must close TestResult.stdout_fp and TestResult.stderr_fp
 
 typedef TestResult CmdResult;
-CmdResult run_cmd_piped(const char* cmd); // Caller must close CmdResult.stdout_pipe and CmdResult.stderr_pipe
+CmdResult run_cmd_piped(const char* cmd); // Caller must close CmdResult.stdout_fp and CmdResult.stderr_fp
 #endif // SPZ_NOPIPE
 
 #ifndef SPZ_NOTIMER
