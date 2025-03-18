@@ -237,7 +237,9 @@ typedef struct TestRegistry {
     int suites_count;
 } TestRegistry;
 
-extern TestRegistry SPZ_TEST_REGISTRY__;
+extern TestRegistry test_registry;
+
+#define SPZ_TEST_REGISTRY__ test_registry
 
 #ifndef _WIN32
 #define SPZ_PATH_SEPARATOR "/"
