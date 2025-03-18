@@ -25,6 +25,7 @@
 #ifndef SPZ_NOPIPE
 #include <unistd.h>
 #include <sys/wait.h>
+#include <errno.h>
 #endif // SPZ_NOPIPE
 
 #define SPZ_MAJOR 0 /**< Represents current major release.*/
@@ -130,11 +131,13 @@ typedef bool (*test_bool_fn)(void);
                             printf("%s\n", (res == 0 ? "\033[0;32mSUCCESS\033[0m" : "\033[0;31mFAILURE\033[0m")); \
                             if (REGISTER_ALL_TESTS_PIPED == 1) { \
                                 printf("---- %s::%s stdout ----\n", suite.name, t.name); \
-                                spz_print_stream_to_file(tr.stdout_pipe, stdout); \
+                                int stdout_fd = fileno(tr.stdout_fp); \
+                                spz_print_stream_to_file(stdout_fd, stdout); \
                                 printf("---- %s::%s stderr ----\n", suite.name, t.name); \
-                                spz_print_stream_to_file(tr.stderr_pipe, stdout); \
-                                close(tr.stdout_pipe); \
-                                close(tr.stderr_pipe); \
+                                int stderr_fd = fileno(tr.stderr_fp); \
+                                spz_print_stream_to_file(stderr_fd, stdout); \
+                                fclose(tr.stdout_fp); \
+                                fclose(tr.stderr_fp); \
                             } \
                             return res; \
                         } \
@@ -268,8 +271,8 @@ int run_testregistry_record(TestRegistry tr, int piped, int record, const char* 
 
 typedef struct TestResult {
     int exit_code;
-    int stdout_pipe;
-    int stderr_pipe;
+    FILE *stdout_fp;
+    FILE *stderr_fp;
     int signum;
 } TestResult;
 
@@ -424,10 +427,103 @@ static inline int spz_call_test(Test x) {
     return run_test(x);
 }
 
+#define log_err(...) fprintf(stderr, __VA_ARGS__)
+
+struct TempFile {
+    FILE* tmp;
+};
+
+typedef struct TempFile TempFile;
+
+static inline TempFile tempfile_new(void)
+{
+    TempFile res = {0};
+    FILE* tmp = tmpfile();
+
+    if (tmp) {
+        res.tmp = tmp;
+    } else {
+        fprintf(stderr, "Failed creating temp file\n");
+        switch(errno) {
+            case EACCES: {
+                log_err("Permission denied\n");
+
+            }
+            break;
+            case EEXIST: {
+                log_err("Unable to generate a unique filename\n");
+            }
+            break;
+            case EINTR: {
+                log_err("Interrupted\n");
+            }
+            break;
+            case ENFILE:
+            case EMFILE: {
+                log_err("Limit reached\n");
+            }
+            break;
+            case ENOSPC: {
+                log_err("Directory was full\n");
+            }
+            break;
+            case EROFS: {
+                log_err("Read-only filesystem\n");
+            }
+            break;
+            default: {
+                log_err("Unexpected error: {%i}\n", errno);
+            }
+            break;
+        }
+    }
+    return res;
+}
+
+static inline int tempfile_fd(TempFile t)
+{
+    if (!t.tmp) {
+        fprintf(stderr, "%s(): fp was NULL\n", __func__);
+        exit(EXIT_FAILURE);
+        return -1;
+    }
+    return fileno(t.tmp);
+}
+
+static inline bool tempfile_close(TempFile *t)
+{
+    if (!t) {
+        fprintf(stderr, "%s(): t was NULL\n", __func__);
+        exit(EXIT_FAILURE);
+        return false;
+    }
+
+    if (!t->tmp) {
+        fprintf(stderr, "%s(): fp was NULL\n", __func__);
+        exit(EXIT_FAILURE);
+        return false;
+    }
+    int close_res = fclose(t->tmp);
+
+    if (close_res == 0) {
+        t->tmp = NULL;
+        return true;
+    } else {
+        return false;
+    }
+}
+
 #define run_piped__(retType, x) do { \
-    int stdout_pipe[2], stderr_pipe[2]; \
-    if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1) { \
-        perror("pipe"); \
+    TempFile stdout_tmpfile = {0}; \
+    TempFile stderr_tmpfile = {0}; \
+    stdout_tmpfile = tempfile_new(); \
+    if (!stdout_tmpfile.tmp) { \
+        perror("failed creating stdout tempfile"); \
+        exit(EXIT_FAILURE); \
+    } \
+    stderr_tmpfile = tempfile_new(); \
+    if (!stderr_tmpfile.tmp) { \
+        perror("failed creating stderr tempfile"); \
         exit(EXIT_FAILURE); \
     } \
     pid_t pid = fork(); \
@@ -437,39 +533,30 @@ static inline int spz_call_test(Test x) {
     } \
     if (pid == 0) { \
         /* Child process*/ \
-        /* Close read end of stdout pipe */ \
-        close(stdout_pipe[0]);  \
-        /* Close read end of stderr pipe */ \
-        close(stderr_pipe[0]);  \
         /* Redirect stdout to pipe */ \
-        dup2(stdout_pipe[1], STDOUT_FILENO); \
+        dup2(tempfile_fd(stdout_tmpfile), STDOUT_FILENO); \
         /* Redirect stderr to pipe */ \
-        dup2(stderr_pipe[1], STDERR_FILENO); \
-        /* Close write end after duplicating */ \
-        close(stdout_pipe[1]); \
-        close(stderr_pipe[1]); \
+        dup2(tempfile_fd(stderr_tmpfile), STDERR_FILENO); \
         int res = _Generic((x), \
                 const char*: spz_call_cmd, \
                 Test: spz_call_test, \
                 default: ERROR_UNSUPPORTED_TYPE \
                 )(x); \
-        exit(res); \
+        fflush(stdout_tmpfile.tmp); \
+        fflush(stderr_tmpfile.tmp); \
+        _Exit(res); \
     } else { \
         /* Parent process */ \
-        /* Close write end of stdout pipe */ \
-        close(stdout_pipe[1]); \
-        /* Close write end of stderr pipe */ \
-        close(stderr_pipe[1]); \
         /* Wait for child process to finish */ \
         int status; \
         if (waitpid(pid, &status, 0) == -1) { \
             fprintf(stderr, "%s(): waitpid() failed\n", __func__); \
-            close(stdout_pipe[0]); \
-            close(stderr_pipe[0]); \
+            tempfile_close(&stdout_tmpfile); \
+            tempfile_close(&stderr_tmpfile); \
             return (retType) { \
                 .exit_code = -1, \
-                .stdout_pipe = -1, \
-                .stderr_pipe = -1, \
+                .stdout_fp = NULL, \
+                .stderr_fp = NULL, \
                 .signum = -1, \
             }; \
         }; \
@@ -482,12 +569,14 @@ static inline int spz_call_test(Test x) {
             signal = WTERMSIG(status); \
             printf("%s(): process was terminated by signal %i\n", __func__, signal); \
         } \
+        rewind(stdout_tmpfile.tmp); \
+        rewind(stderr_tmpfile.tmp); \
         return (retType) { \
             .exit_code = es, \
             /* Must be closed by caller */ \
-            .stdout_pipe = stdout_pipe[0], \
+            .stdout_fp = stdout_tmpfile.tmp, \
             /* Must be closed by caller */ \
-            .stderr_pipe = stderr_pipe[0], \
+            .stderr_fp = stderr_tmpfile.tmp, \
             .signum = signal, \
         }; \
     } \
@@ -529,16 +618,16 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
         return -1; // error opening file
     }
 
-    // Buffer for reading from both the pipe and the file
-    char pipe_buffer[256];
+    // Buffer for reading from both the source and the file
+    char source_buffer[256];
     char file_buffer[256];
-    ssize_t pipe_count, file_count;
+    ssize_t source_count, file_count;
 
     // Compare the contents
-    while ((pipe_count = read(source, pipe_buffer, sizeof(pipe_buffer))) > 0) {
-        file_count = fread(file_buffer, 1, pipe_count, file);
+    while ((source_count = read(source, source_buffer, sizeof(source_buffer))) > 0) {
+        file_count = fread(file_buffer, 1, source_count, file);
 
-        if (pipe_count != file_count || memcmp(pipe_buffer, file_buffer, pipe_count) != 0) {
+        if (source_count != file_count || memcmp(source_buffer, file_buffer, source_count) != 0) {
             fclose(file);
             return 0; // contents don't match
         }
@@ -569,7 +658,8 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
     TestResult r = run_piped(x); \
     if (r.exit_code == 0) { \
         int mismatch = 0; \
-        int stdout_res = spz_compare_stream_to_file(r.stdout_pipe, stdout_filename); \
+        int stdout_fd = fileno(r.stdout_fp); \
+        int stdout_res = spz_compare_stream_to_file(stdout_fd, stdout_filename); \
         switch (stdout_res) { \
             case 0: { \
                 printf("stdout mismatch\n"); \
@@ -589,7 +679,8 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
             } \
             break; \
         } \
-        int stderr_res = spz_compare_stream_to_file(r.stderr_pipe, stderr_filename); \
+        int stderr_fd = fileno(r.stderr_fp); \
+        int stderr_res = spz_compare_stream_to_file(stderr_fd, stderr_filename); \
         switch (stderr_res) { \
             case 0: { \
                 printf("stderr mismatch\n"); \
@@ -609,13 +700,13 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
             } \
             break; \
         } \
-        close(r.stdout_pipe); \
-        close(r.stderr_pipe); \
+        fclose(r.stdout_fp); \
+        fclose(r.stderr_fp); \
         *res = mismatch; \
     } else { \
         printf("failure, exit code: {%i}\n", r.exit_code); \
-        close(r.stdout_pipe); \
-        close(r.stderr_pipe); \
+        fclose(r.stdout_fp); \
+        fclose(r.stderr_fp); \
         *res = r.exit_code; \
     } \
 } while (0)
@@ -631,7 +722,7 @@ int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_
     int successes = 0;
 #ifndef SPZ_NOPIPE
     int exit_codes[MAX_TESTS] = {0};
-    int error_streams[MAX_TESTS][2] = {0};
+    FILE* error_streams[MAX_TESTS][2] = {0};
     const char* failed[MAX_TESTS] = {0};
 #endif // SPZ_NOPIPE
 
@@ -648,8 +739,8 @@ int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_
             if (res.exit_code != 0) {
                 printf("\033[0;31mFAILED\033[0m\n");
                 exit_codes[failures] = res.exit_code;
-                error_streams[failures][0] = res.stdout_pipe;
-                error_streams[failures][1] = res.stderr_pipe;
+                error_streams[failures][0] = res.stdout_fp;
+                error_streams[failures][1] = res.stderr_fp;
                 failed[failures] = suite.tests[i].name;
                 failures++;
             } else {
@@ -665,7 +756,8 @@ int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_
                     }
                     sprintf(pathbuf, ".%s%s%s", SPZ_PATH_SEPARATOR, suite.tests[i].name, stdout_pb_suffix);
                     FILE* stdout_record_file = fopen(pathbuf, "w");
-                    spz_print_stream_to_file(res.stdout_pipe, stdout_record_file);
+                    int stdout_fd = fileno(res.stdout_fp);
+                    spz_print_stream_to_file(stdout_fd, stdout_record_file);
                     fclose(stdout_record_file);
 
                     const char* stderr_pb_suffix = NULL;
@@ -676,11 +768,12 @@ int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_
                     }
                     sprintf(pathbuf, ".%s%s%s", SPZ_PATH_SEPARATOR, suite.tests[i].name, stderr_pb_suffix);
                     FILE* stderr_record_file = fopen(pathbuf, "w");
-                    spz_print_stream_to_file(res.stderr_pipe, stderr_record_file);
+                    int stderr_fd = fileno(res.stderr_fp);
+                    spz_print_stream_to_file(stderr_fd, stderr_record_file);
                     fclose(stderr_record_file);
                 }
-                close(res.stdout_pipe);
-                close(res.stderr_pipe);
+                fclose(res.stdout_fp);
+                fclose(res.stderr_fp);
             }
         } else {
             int res = run_test(suite.tests[i]);
@@ -715,13 +808,15 @@ int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_
         printf("\nfailures:\n\n");
         for (int i=0; i < failures; i++) {
             printf("---- %s::%s stdout ----\n", suite.name, failed[i]);
-            spz_print_stream_to_file(error_streams[i][0], stdout);
+            int stdout_fd = fileno(error_streams[i][0]);
+            spz_print_stream_to_file(stdout_fd, stdout);
 
             printf("---- %s::%s stderr ----\n", suite.name, failed[i]);
-            spz_print_stream_to_file(error_streams[i][1], stdout);
+            int stderr_fd = fileno(error_streams[i][1]);
+            spz_print_stream_to_file(stderr_fd, stdout);
 
-            close(error_streams[i][0]);
-            close(error_streams[i][1]);
+            fclose(error_streams[i][0]);
+            fclose(error_streams[i][1]);
         }
         printf("\nfailures:\n");
         for (int i=0; i < failures; i++) {
