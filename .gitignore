@@ -2,3 +2,4 @@ demo
 demo.exe
 *.stdout
 *.stderr
+doxygen
