@@ -32,20 +32,33 @@
 #define SPZ_MINOR 1 /**< Represents current minor release.*/
 #define SPZ_PATCH 1 /**< Represents current patch release.*/
 
+/**
+ * Defines current API version number from SPZ_MAJOR, SPZ_MINOR and SPZ_PATCH.
+ */
 static const int SPZ_API_VERSION_INT =
     (SPZ_MAJOR * 1000000 + SPZ_MINOR * 10000 + SPZ_PATCH * 100);
+/**< Represents current version with numeric format.*/
 
-typedef void (*test_void_fn)(void);
-typedef int (*test_int_fn)(void);
-typedef bool (*test_bool_fn)(void);
+typedef void (*test_void_fn)(void); /**< Used to select a test function returning void.*/
+typedef int (*test_int_fn)(void); /**< Used to select a test function returning int.*/
+typedef bool (*test_bool_fn)(void); /**< Used to select a test function returning bool.*/
 
-// Macro to declare a test function
+/**
+ * Macro to declare a test function.
+ * @param retType The return type for the test.
+ * @param name The name for the test.
+ */
 #define TEST(retType, name) \
     static retType name(void); \
     static retType name(void)
 
-#define ERROR_UNSUPPORTED_TYPE (*(int*)0)  // Passed an unexpected test type to REGISTER_TEST()
+#define ERROR_UNSUPPORTED_TYPE (*(int*)0)  /**< Used internally to detect an unexpected test type was passed to REGISTER_TEST().*/
 
+/**
+ * Macro to register a test to a TestRegistry.
+ * @param registry The TestRegitry to add to.
+ * @param name The name for the test.
+ */
 #define REGISTER_TEST_TOREG(registry, name) _Generic( (name), \
         test_void_fn: register_void_test_toreg, \
         test_int_fn: register_int_test_toreg, \
@@ -53,11 +66,28 @@ typedef bool (*test_bool_fn)(void);
         default: ERROR_UNSUPPORTED_TYPE \
         )(registry, #name, &name)
 
+/**
+ * Macro to register a test to the default TestRegistry.
+ * @see SPZ_TEST_REGISTRY__
+ * @see REGISTER_TEST_TOREG
+ * @param name The name for the test.
+ */
 #define REGISTER_TEST(name) REGISTER_TEST_TOREG(&SPZ_TEST_REGISTRY__, name)
 
+/**
+ * Macro to register a TestSuite to a TestRegistry.
+ * @param registry The TestRegitry to add to.
+ * @param name The name for the suite.
+ */
 #define REGISTER_SUITE_TOREG(registry, name) \
     register_test_suite_toreg(registry, name)
 
+/**
+ * Macro to register a TestSuite to the default TestRegistry.
+ * @see SPZ_TEST_REGISTRY__
+ * @see REGISTER_SUITE_TOREG
+ * @param name The name for the suite.
+ */
 #define REGISTER_SUITE(name) \
     REGISTER_SUITE_TOREG(&SPZ_TEST_REGISTRY__, name)
 
@@ -78,7 +108,23 @@ typedef bool (*test_bool_fn)(void);
 #endif // SPZ_NOPIPE
 
 #ifndef SPZ_NOPIPE
-// Macro to register all tests automatically
+/**
+ * Macro to register and run all tests automatically to the default TestRegistry.
+ * Implicitly defines main(), spz_usage() and register_all_tests().
+ * register_all_tests() registers suite "default", and expands TEST_LIST
+ *  expecting it to be an X-macro, using REGISTER_TEST on all Xs.
+ * spz_usage() prints usage info for the generated binary.
+ * main() by default runs all tests registered in all test suites.
+ * In the default case, if REGISTER_ALL_TESTS_PIPED is defined as 1,
+ *  run_test_piped() is used, otherwise run_test().
+ * If main() is called with a suite or test name as args, it will
+ *  run that specific suite/test.
+ * @see SPZ_TEST_REGISTRY__
+ * @see REGISTER_SUITE
+ * @see REGISTER_TEST
+ * @see run_test_piped
+ * @see run_test
+ */
 #define REGISTER_ALL_TESTS() \
     static void register_all_tests(void) { \
         REGISTER_SUITE("default"); \
@@ -152,6 +198,21 @@ typedef bool (*test_bool_fn)(void);
         } \
     }
 #else
+/**
+ * Macro to register and run all tests automatically to the default TestRegistry.
+ * Implicitly defines main(), spz_usage() and register_all_tests().
+ * register_all_tests() registers suite "default", and expands TEST_LIST
+ *  expecting it to be an X-macro, using REGISTER_TEST on all Xs.
+ * spz_usage() prints usage info for the generated binary.
+ * main() by default runs all tests registered in all test suites.
+ * In the default case, run_test() is used.
+ * If main() is called with a suite or test name as args, it will
+ *  run that specific suite/test.
+ * @see SPZ_TEST_REGISTRY__
+ * @see REGISTER_SUITE
+ * @see REGISTER_TEST
+ * @see run_test
+ */
 #define REGISTER_ALL_TESTS() \
     static void register_all_tests(void) { \
         REGISTER_SUITE("default"); \
@@ -206,39 +267,95 @@ typedef bool (*test_bool_fn)(void);
     }
 #endif // SPZ_NOPIPE
 
+/**
+ * Defines a valid test signature.
+ * @see test_void_fn
+ * @see test_int_fn
+ * @see test_bool_fn
+ */
 typedef union test_fn {
-    test_void_fn void_fn;
-    test_int_fn int_fn;
-    test_bool_fn bool_fn;
+    test_void_fn void_fn; /**< Used for tests returning void.*/
+    test_int_fn int_fn; /**< Used for tests returning int.*/
+    test_bool_fn bool_fn; /**< Used for tests returning bool.*/
 } test_fn;
 
+/**
+ * Used to tag the test_fn field for Test depending on the type of the test.
+ * @see test_fn
+ * @see Test
+ */
 typedef enum Test_Type {
     TEST_VOID,
     TEST_INT,
     TEST_BOOL,
 } Test_Type;
 
+/**
+ * Represents a named test. The test_fn union is tagged by the Test_Type field.
+ * @see Test_Type
+ * @see test_fn
+ * @see REGISTER_TEST
+ */
 typedef struct Test {
-    Test_Type type;
-    test_fn func;
-    const char* name;
+    Test_Type type; /**< Used to tag the func field.*/
+    test_fn func; /**< Holds the proper test function pointer*/
+    const char* name; /**< Name of the test.*/
 } Test;
 
+/**
+ * Defines max number of tests in each suite.
+ * @see TestSuite
+ */
 #define MAX_TESTS 100
+
+/**
+ * Represents a named test suite.
+ * @see Test
+ * @see REGISTER_SUITE
+ */
 typedef struct TestSuite {
-    Test tests[MAX_TESTS];
-    int test_count;
-    const char* name;
+    Test tests[MAX_TESTS]; /**< Holds all tests of the suite.*/
+    int test_count; /**< Counts how many tests are registered.*/
+    const char* name; /**< Name of the suite.*/
 } TestSuite;
 
+/**
+ * Defines max number of suites in each test registry.
+ * @see TestRegistry
+ */
 #define MAX_SUITES 100
+
+/**
+ * Represents a group of test suites.
+ * @see TestSuite
+ * @see REGISTER_SUITE_TOREG
+ * @see REGISTER_TEST_TOREG
+ */
 typedef struct TestRegistry {
-    TestSuite suites[MAX_SUITES];
-    int suites_count;
+    TestSuite suites[MAX_SUITES]; /**< Holds all test suites of the registry.*/
+    int suites_count; /**< Counts how many suites are registered.*/
 } TestRegistry;
 
+/**
+ * Global default TestRegistry.
+ * Only here for compatibility with 0.1.0 as next version will rename it to
+ *  SPZ_TEST_REGISTRY__.
+ * Used by REGISTER_SUITE, REGISTER_TEST macros.
+ * @see TestRegistry
+ * @see REGISTER_SUITE
+ * @see REGISTER_TEST
+ * @see SPZ_TEST_REGISTRY__
+ */
 extern TestRegistry test_registry;
 
+/**
+ * Auxiliary name for global default TestRegistry.
+ * Only here for compatibility with 0.1.0 as next version will rename test_registry.
+ * @see TestSuite
+ * @see REGISTER_SUITE_TOREG
+ * @see REGISTER_TEST_TOREG
+ * @see test_registry
+ */
 #define SPZ_TEST_REGISTRY__ test_registry
 
 #ifndef _WIN32
@@ -271,16 +388,43 @@ int run_testregistry_record(TestRegistry tr, int piped, int record, const char* 
 
 #ifndef SPZ_NOPIPE
 
+/**
+ * Represents the result of a run_test_piped() call.
+ * @see run_test_piped
+ */
 typedef struct TestResult {
-    int exit_code;
-    FILE *stdout_fp;
-    FILE *stderr_fp;
-    int signum;
+    int exit_code; /**< Exit code of the test.*/
+    FILE *stdout_fp; /**< Pointer to temporary FILE used for test stdout.*/
+    FILE *stderr_fp; /**< Pointer to temporary FILE used for test stderr.*/
+    int signum; /**< Signal number that interrupted the test.*/
 } TestResult;
 
-TestResult run_test_piped(Test t); // Caller must close TestResult.stdout_fp and TestResult.stderr_fp
+/**
+ * Run a Test while redirecting its stdout and stderr onto two tempfiles.
+ * Caller must close result.stdout_fp and result.stderr_fp after.
+ * @see Test
+ * @see TestResult
+ * @see run_test
+ * @param t The test to run.
+ * @return The result of the test.
+ */
+TestResult run_test_piped(Test t);
 
+/**
+ * Represents the result of a run_cmd_piped() call.
+ * @see run_cmd_piped
+ * @see TestResult
+ */
 typedef TestResult CmdResult;
+
+/**
+ * Run a cmd while redirecting its stdout and stderr onto two tempfiles.
+ * Caller must close result.stdout_fp and result.stderr_fp after.
+ * @see CmdResult
+ * @see run_cmd
+ * @param cmd The cmd to run.
+ * @return The result of the test.
+ */
 CmdResult run_cmd_piped(const char* cmd); // Caller must close CmdResult.stdout_fp and CmdResult.stderr_fp
 #endif // SPZ_NOPIPE
 
@@ -338,8 +482,28 @@ double dt_stop(DumbTimer* dt);
 
 #ifdef SPZ_IMPLEMENTATION
 
+/**
+ * Default global TestRegistry.
+ * The suites_count field starts from -1 since we use the count to index the
+ *  suites array.
+ */
 TestRegistry SPZ_TEST_REGISTRY__ = { .suites_count = -1, };
 
+/**
+ * Internal macro used to implement proper register_X_test_toreg functions for each test_fn kind.
+ * Should be undefined by the implementation before the end of the
+ *  SPZ_IMPLEMENTATION block.
+ * @see TestRegistry
+ * @see test_fn
+ * @see Test
+ * @see register_bool_test_toreg
+ * @see register_void_test_toreg
+ * @see register_int_test_toreg
+ * @param registry The TestRegistry to add to.
+ * @param test_type The return type of the test to register.
+ * @param name The name for the test.
+ * @param func The actual test_fn function.
+ */
 #define register_test(registry, test_type, name, func) do { \
     TestSuite* curr_suite = &(registry->suites[registry->suites_count]); \
     /* printf("%s(): Registering test {%s} to suite {%s}\n", __func__, name, curr_suite->name); */\
@@ -358,30 +522,85 @@ TestRegistry SPZ_TEST_REGISTRY__ = { .suites_count = -1, };
     } \
 } while (0)
 
+/**
+ * Registers a test_bool_fn to the passed TestRegistry.
+ * @see TestRegistry
+ * @see test_bool_fn
+ * @param tr The TestRegistry to add to.
+ * @param name The name for the test.
+ * @param func The actual test function.
+ */
 void register_bool_test_toreg(TestRegistry *tr, const char* name, test_bool_fn func) {
     register_test(tr, bool, name, func);
 }
 
+/**
+ * Registers a test_void_fn to the passed TestRegistry.
+ * @see TestRegistry
+ * @see test_void_fn
+ * @param tr The TestRegistry to add to.
+ * @param name The name for the test.
+ * @param func The actual test function.
+ */
 void register_void_test_toreg(TestRegistry *tr, const char* name, test_void_fn func) {
     register_test(tr, void, name, func);
 }
 
+/**
+ * Registers a test_int_fn to the passed TestRegistry.
+ * @see TestRegistry
+ * @see test_int_fn
+ * @param tr The TestRegistry to add to.
+ * @param name The name for the test.
+ * @param func The actual test function.
+ */
 void register_int_test_toreg(TestRegistry *tr, const char* name, test_int_fn func) {
     register_test(tr, int, name, func);
 }
 
+/**
+ * Registers a test_bool_fn to the default global TestRegistry.
+ * @see TestRegistry
+ * @see SPZ_TEST_REGISTRY__
+ * @see test_bool_fn
+ * @param name The name for the test.
+ * @param func The actual test function.
+ */
 void register_bool_test(const char* name, test_bool_fn func) {
     register_bool_test_toreg(&SPZ_TEST_REGISTRY__, name, func);
 }
 
+/**
+ * Registers a test_void_fn to the default global TestRegistry.
+ * @see TestRegistry
+ * @see SPZ_TEST_REGISTRY__
+ * @see test_void_fn
+ * @param name The name for the test.
+ * @param func The actual test function.
+ */
 void register_void_test(const char* name, test_void_fn func) {
     register_void_test_toreg(&SPZ_TEST_REGISTRY__, name, func);
 }
 
+/**
+ * Registers a test_int_fn to the default global TestRegistry.
+ * @see TestRegistry
+ * @see SPZ_TEST_REGISTRY__
+ * @see test_int_fn
+ * @param name The name for the test.
+ * @param func The actual test function.
+ */
 void register_int_test(const char* name, test_int_fn func) {
     register_int_test_toreg(&SPZ_TEST_REGISTRY__, name, func);
 }
 
+/**
+ * Registers a new TestSuite to the passed TestRegistry.
+ * @see TestRegistry
+ * @see TestSuite
+ * @param tr The TestRegistry to add to.
+ * @param name The name for the suite.
+ */
 void register_test_suite_toreg(TestRegistry *tr, const char* name) {
     if (tr->suites_count < MAX_SUITES) {
         tr->suites_count++;
@@ -391,10 +610,25 @@ void register_test_suite_toreg(TestRegistry *tr, const char* name) {
     }
 }
 
+/**
+ * Registers a new TestSuite to the default global TestRegistry.
+ * @see TestRegistry
+ * @see SPZ_TEST_REGISTRY__
+ * @see TestSuite
+ * @param name The name for the suite.
+ */
 void register_test_suite(const char* name) {
     register_test_suite_toreg(&SPZ_TEST_REGISTRY__, name);
 }
 
+/**
+ * Run a Test. Checks inner type field to dispatch the proper function pointer
+ *  in the test_fn union.
+ * @see Test
+ * @see test_fn
+ * @param t The test to run.
+ * @return The result of the func call.
+ */
 int run_test(Test t) {
     int res = 0;
     switch (t.type) {
@@ -512,6 +746,16 @@ static inline bool tempfile_close(TempFile *t)
     }
 }
 
+/**
+ * Internal macro used to implement proper run_X_piped functions for both
+ *  Test and const char* (cmd).
+ * Should be undefined by the implementation before the end of the
+ *  SPZ_IMPLEMENTATION block.
+ * Tries creating a temporary file using ad-hoc TempFile, not exported in the
+ *  header.
+ * @param retType The return type for the calling function.
+ * @param x The actual Test/cmd to run.
+ */
 #define run_piped__(retType, x) do { \
     TempFile stdout_tmpfile = {0}; \
     TempFile stderr_tmpfile = {0}; \
@@ -595,14 +839,32 @@ static inline bool tempfile_close(TempFile *t)
     } \
 } while(0)
 
+/**
+ * Run a Test and collect its stdout/stderr output into temporary files.
+ * @see Test
+ * @see TestResult
+ * @param t The test to run.
+ */
 TestResult run_test_piped(Test t) {
     run_piped__(TestResult, t);
 }
 
+/**
+ * Run a cmd and collect its stdout/stderr output into temporary files.
+ * @see CmdResult
+ * @param cmd The cmd to run.
+ */
 CmdResult run_cmd_piped(const char* cmd) {
     run_piped__(CmdResult, cmd);
 }
 
+/**
+ * Generic macro to run both Test and char* and collect the stdout/stderr
+ *  output into temporary files.
+ * @see run_test_piped
+ * @see run_cmd_piped
+ * @param x The Test/cmd to run.
+ */
 #define run_piped(x) _Generic((x), \
         char*: run_cmd_piped, \
         Test: run_test_piped, \
@@ -656,17 +918,35 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
     return 1; // contents match
 }
 
+/**
+ * Generic macro to run both Test and char* and print its stdout/stderr after
+ *  the run ends.
+ * @see run_piped
+ * @param x The Test/cmd to run.
+ * @param res An int* to store the exit code of the test into.
+ */
 #define spz_run(x, res) do { \
     TestResult r = run_piped(x); \
     printf("---- stdout ----\n"); \
-    spz_print_stream_to_file(r.stdout_pipe, stdout); \
+    int stdout_fd = fileno(r.stdout_fp); \
+    spz_print_stream_to_file(stdout_fd, stdout); \
     printf("---- stderr ----\n"); \
-    spz_print_stream_to_file(r.stderr_pipe, stdout); \
-    close(r.stdout_pipe); \
-    close(r.stderr_pipe); \
+    int stderr_fd = fileno(r.stderr_fp); \
+    spz_print_stream_to_file(stderr_fd, stdout); \
+    fclose(r.stdout_fp); \
+    fclose(r.stderr_fp); \
     *res = r.exit_code; \
 } while (0)
 
+/**
+ * Generic macro to run both Test and char* and check if its stdout/stderr
+ *  matches the passed filepath contents.
+ * @see run_piped
+ * @param x The Test/cmd to run.
+ * @param res An int* to store the result of the checked test into.
+ * @param stdout_filename Path to the stdout record file.
+ * @param stderr_filename Path to the stderr record file.
+ */
 #define spz_run_checked(x, res, stdout_filename, stderr_filename) do { \
     TestResult r = run_piped(x); \
     if (r.exit_code == 0) { \
@@ -726,10 +1006,28 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
 
 #endif // SPZ_NOPIPE
 
+/**
+ * Run a TestSuite. Wrapper of run_suite_record.
+ * @see TestSuite
+ * @see run_suite_record
+ * @param suite The suite to run.
+ * @param piped When >0, turns on stdout/stderr piping.
+ * @return 0 for success or number of errors occurred.
+ */
 int run_suite(TestSuite suite, int piped) {
     return run_suite_record(suite, piped, 0, NULL, NULL);
 }
 
+/**
+ * Run a TestSuite.
+ * @see TestSuite
+ * @param suite The suite to run.
+ * @param piped When >0, turns on stdout/stderr piping.
+ * @param record When >0, turns on stdout/stderr recording.
+ * @param stdout_record_suffix Suffix used for stdout record.
+ * @param stderr_record_suffix Suffix used for stderr record.
+ * @return 0 for success or number of errors occurred.
+ */
 int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix) {
     int failures = 0;
     int successes = 0;
@@ -845,18 +1143,51 @@ int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_
     return failures;
 }
 
+/**
+ * Run all TestSuites in global TestRegistry. Wrapper of run_tests_record.
+ * @see SPZ_TEST_REGISTRY__
+ * @see run_tests_record
+ * @param piped When >0, turns on stdout/stderr piping.
+ * @return 0 for success or number of errors occurred.
+ */
 int run_tests(int piped) {
     return run_tests_record(piped, 0, NULL, NULL);
 }
 
+/**
+ * Run all TestSuites in global TestRegistry. Wrapper of run_testregistry_record.
+ * @see SPZ_TEST_REGISTRY__
+ * @see run_testregistry_record
+ * @param piped When >0, turns on stdout/stderr piping.
+ * @param record When >0, turns on stdout/stderr recording.
+ * @param stdout_record_suffix Suffix used for stdout record.
+ * @param stderr_record_suffix Suffix used for stderr record.
+ * @return 0 for success or number of errors occurred.
+ */
 int run_tests_record(int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix) {
     return run_testregistry_record(SPZ_TEST_REGISTRY__, piped, record, stdout_record_suffix, stderr_record_suffix);
 }
 
+/**
+ * Run all TestSuites in passed TestRegistry. Wrapper of run_testregistry_record.
+ * @see TestRegistry
+ * @see run_testregistry_record
+ * @param piped When >0, turns on stdout/stderr piping.
+ * @return 0 for success or number of errors occurred.
+ */
 int run_testregistry(TestRegistry tr, int piped) {
     return run_testregistry_record(tr, piped, 0, NULL, NULL);
 }
 
+/**
+ * Run all TestSuites in a TestRegistry.
+ * @see TestRegistry
+ * @param piped When >0, turns on stdout/stderr piping.
+ * @param record When >0, turns on stdout/stderr recording.
+ * @param stdout_record_suffix Suffix used for stdout record.
+ * @param stderr_record_suffix Suffix used for stderr record.
+ * @return 0 for success or number of errors occurred.
+ */
 int run_testregistry_record(TestRegistry tr, int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix) {
     int failures = 0;
     printf("Running all test suites...\n");
