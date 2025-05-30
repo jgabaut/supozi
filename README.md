@@ -32,6 +32,7 @@ TEST(void, test_subtraction) {
 }
 
 TEST(bool, test_foo) {
+    printf("FOO\n");
     return false;
 }
 
@@ -57,6 +58,7 @@ Running all test suites...
 failures:
 
 ---- default::test_foo stdout ----
+FOO
 ---- default::test_foo stderr ----
 
 failures:
