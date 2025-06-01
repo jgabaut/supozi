@@ -29,8 +29,8 @@
 #endif // SPZ_NOPIPE
 
 #define SPZ_MAJOR 0 /**< Represents current major release.*/
-#define SPZ_MINOR 1 /**< Represents current minor release.*/
-#define SPZ_PATCH 1 /**< Represents current patch release.*/
+#define SPZ_MINOR 2 /**< Represents current minor release.*/
+#define SPZ_PATCH 0 /**< Represents current patch release.*/
 
 /**
  * Defines current API version number from SPZ_MAJOR, SPZ_MINOR and SPZ_PATCH.
@@ -338,25 +338,13 @@ typedef struct TestRegistry {
 
 /**
  * Global default TestRegistry.
- * Only here for compatibility with 0.1.0 as next version will rename it to
- *  SPZ_TEST_REGISTRY__.
  * Used by REGISTER_SUITE, REGISTER_TEST macros.
  * @see TestRegistry
  * @see REGISTER_SUITE
  * @see REGISTER_TEST
  * @see SPZ_TEST_REGISTRY__
  */
-extern TestRegistry test_registry;
-
-/**
- * Auxiliary name for global default TestRegistry.
- * Only here for compatibility with 0.1.0 as next version will rename test_registry.
- * @see TestSuite
- * @see REGISTER_SUITE_TOREG
- * @see REGISTER_TEST_TOREG
- * @see test_registry
- */
-#define SPZ_TEST_REGISTRY__ test_registry
+extern TestRegistry SPZ_TEST_REGISTRY__;
 
 #ifndef _WIN32
 #define SPZ_PATH_SEPARATOR "/"
