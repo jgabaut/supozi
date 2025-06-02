@@ -943,7 +943,6 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
         int stdout_res = spz_compare_stream_to_file(stdout_fd, stdout_filename); \
         switch (stdout_res) { \
             case 0: { \
-                printf("stdout mismatch\n"); \
                 FILE* stdout_file = fopen(stdout_filename, "rb"); \
                 if (!stdout_file) { \
                     fprintf(stderr, "Failed opening stdout record at {%s}\n", stdout_filename); \
@@ -975,7 +974,6 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
         int stderr_res = spz_compare_stream_to_file(stderr_fd, stderr_filename); \
         switch (stderr_res) { \
             case 0: { \
-                printf("stderr mismatch\n"); \
                 FILE* stderr_file = fopen(stderr_filename, "rb"); \
                 if (!stderr_file) { \
                     fprintf(stderr, "Failed opening stderr record at {%s}\n", stderr_filename); \
