@@ -947,11 +947,12 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
                 if (!stdout_file) { \
                     fprintf(stderr, "Failed opening stdout record at {%s}\n", stdout_filename); \
                 } else { \
-                    printf("Expected: \n"); \
+                    printf("Expected: {\"\n"); \
                     int stdout_record_fd = fileno(stdout_file); \
                     spz_print_stream_to_file(stdout_record_fd, stdout); \
-                    printf("Found: \n"); \
+                    printf("\"}\nFound: {\"\n"); \
                     spz_print_stream_to_file(stdout_fd, stdout); \
+                    printf("\"}\n"); \
                     fclose(stdout_file); \
                 } \
                 mismatch += 1; \
@@ -978,11 +979,12 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
                 if (!stderr_file) { \
                     fprintf(stderr, "Failed opening stderr record at {%s}\n", stderr_filename); \
                 } else { \
-                    printf("Expected: \n"); \
+                    printf("Expected: {\"\n"); \
                     int stderr_record_fd = fileno(stderr_file); \
                     spz_print_stream_to_file(stderr_record_fd, stdout); \
-                    printf("Found: \n"); \
+                    printf("\"}\nFound: {\"\n"); \
                     spz_print_stream_to_file(stderr_fd, stdout); \
+                    printf("\"}\n"); \
                     fclose(stderr_file); \
                 } \
                 mismatch += 2; \
