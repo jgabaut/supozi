@@ -937,81 +937,67 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
  */
 #define spz_run_checked(x, res, stdout_filename, stderr_filename) do { \
     TestResult r = run_piped(x); \
-    if (r.exit_code == 0) { \
-        int mismatch = 0; \
-        int stdout_fd = fileno(r.stdout_fp); \
-        int stdout_res = spz_compare_stream_to_file(stdout_fd, stdout_filename); \
-        switch (stdout_res) { \
-            case 0: { \
-                FILE* stdout_file = fopen(stdout_filename, "rb"); \
-                if (!stdout_file) { \
-                    fprintf(stderr, "Failed opening stdout record at {%s}\n", stdout_filename); \
-                } else { \
-                    printf("Expected: {\"\n"); \
-                    int stdout_record_fd = fileno(stdout_file); \
-                    spz_print_stream_to_file(stdout_record_fd, stdout); \
-                    printf("\"}\nFound: {\"\n"); \
-                    spz_print_stream_to_file(stdout_fd, stdout); \
-                    printf("\"}\n"); \
-                    fclose(stdout_file); \
-                } \
-                mismatch += 1; \
+    int stdout_fd = fileno(r.stdout_fp); \
+    int stdout_res = spz_compare_stream_to_file(stdout_fd, stdout_filename); \
+    switch (stdout_res) { \
+        case 0: { \
+            FILE* stdout_file = fopen(stdout_filename, "rb"); \
+            if (!stdout_file) { \
+                fprintf(stderr, "Failed opening stdout record at {%s}\n", stdout_filename); \
+            } else { \
+                printf("Expected: {\"\n"); \
+                int stdout_record_fd = fileno(stdout_file); \
+                spz_print_stream_to_file(stdout_record_fd, stdout); \
+                printf("\"}\nFound: {\"\n"); \
+                spz_print_stream_to_file(stdout_fd, stdout); \
+                printf("\"}\n"); \
+                fclose(stdout_file); \
             } \
-            break; \
-            case 1: { /* Matched */ } \
-            break; \
-            case -1: { \
-                printf("stdout record {%s} not found\n", stdout_filename); \
-                mismatch -= 3; \
-            } \
-            break; \
-            default: { \
-                printf("unexpected result: {%i}\n", stdout_res); \
-                mismatch -= 10; \
-            } \
-            break; \
         } \
-        int stderr_fd = fileno(r.stderr_fp); \
-        int stderr_res = spz_compare_stream_to_file(stderr_fd, stderr_filename); \
-        switch (stderr_res) { \
-            case 0: { \
-                FILE* stderr_file = fopen(stderr_filename, "rb"); \
-                if (!stderr_file) { \
-                    fprintf(stderr, "Failed opening stderr record at {%s}\n", stderr_filename); \
-                } else { \
-                    printf("Expected: {\"\n"); \
-                    int stderr_record_fd = fileno(stderr_file); \
-                    spz_print_stream_to_file(stderr_record_fd, stdout); \
-                    printf("\"}\nFound: {\"\n"); \
-                    spz_print_stream_to_file(stderr_fd, stdout); \
-                    printf("\"}\n"); \
-                    fclose(stderr_file); \
-                } \
-                mismatch += 2; \
-            } \
-            break; \
-            case 1: { /* Matched */ } \
-            break; \
-            case -1: { \
-                printf("stderr record {%s} not found\n", stderr_filename); \
-                mismatch -= 3; \
-            } \
-            break; \
-            default: { \
-                printf("unexpected result: {%i}\n", stderr_res); \
-                mismatch -= 10; \
-            } \
-            break; \
+        break; \
+        case 1: { /* Matched */ } \
+        break; \
+        case -1: { \
+            printf("stdout record {%s} not found\n", stdout_filename); \
         } \
-        fclose(r.stdout_fp); \
-        fclose(r.stderr_fp); \
-        *res = mismatch; \
-    } else { \
-        printf("failure, exit code: {%i}\n", r.exit_code); \
-        fclose(r.stdout_fp); \
-        fclose(r.stderr_fp); \
-        *res = r.exit_code; \
+        break; \
+        default: { \
+            printf("unexpected result: {%i}\n", stdout_res); \
+        } \
+        break; \
     } \
+    int stderr_fd = fileno(r.stderr_fp); \
+    int stderr_res = spz_compare_stream_to_file(stderr_fd, stderr_filename); \
+    switch (stderr_res) { \
+        case 0: { \
+            FILE* stderr_file = fopen(stderr_filename, "rb"); \
+            if (!stderr_file) { \
+                fprintf(stderr, "Failed opening stderr record at {%s}\n", stderr_filename); \
+            } else { \
+                printf("Expected: {\"\n"); \
+                int stderr_record_fd = fileno(stderr_file); \
+                spz_print_stream_to_file(stderr_record_fd, stdout); \
+                printf("\"}\nFound: {\"\n"); \
+                spz_print_stream_to_file(stderr_fd, stdout); \
+                printf("\"}\n"); \
+                fclose(stderr_file); \
+            } \
+        } \
+        break; \
+        case 1: { /* Matched */ } \
+        break; \
+        case -1: { \
+            printf("stderr record {%s} not found\n", stderr_filename); \
+        } \
+        break; \
+        default: { \
+            printf("unexpected result: {%i}\n", stderr_res); \
+        } \
+        break; \
+    } \
+    fclose(r.stdout_fp); \
+    fclose(r.stderr_fp); \
+    *res = r.exit_code; \
 } while (0)
 
 #endif // SPZ_NOPIPE
