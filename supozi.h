@@ -932,10 +932,11 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
  * @see run_piped
  * @param x The Test/cmd to run.
  * @param res An int* to store the result of the checked test into.
+ * @param record A boolean to overwrite the record file on mismatch.
  * @param stdout_filename Path to the stdout record file.
  * @param stderr_filename Path to the stderr record file.
  */
-#define spz_run_checked(x, res, stdout_filename, stderr_filename) do { \
+#define spz_run_checked(x, res, record, stdout_filename, stderr_filename) do { \
     TestResult r = run_piped(x); \
     int stdout_fd = fileno(r.stdout_fp); \
     int stdout_res = spz_compare_stream_to_file(stdout_fd, stdout_filename); \
@@ -951,7 +952,15 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
                 printf("\"}\nFound: {\"\n"); \
                 spz_print_stream_to_file(stdout_fd, stdout); \
                 printf("\"}\n"); \
-                fclose(stdout_file); \
+                if (record) { \
+                    fclose(stdout_file); \
+                    FILE* stdout_file = fopen(stdout_filename, "w"); \
+                    rewind(r.stdout_fp); \
+                    spz_print_stream_to_file(stdout_fd, stdout_file); \
+                    fclose(stdout_file); \
+                } else { \
+                    fclose(stdout_file); \
+                } \
             } \
         } \
         break; \
@@ -980,7 +989,15 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
                 printf("\"}\nFound: {\"\n"); \
                 spz_print_stream_to_file(stderr_fd, stdout); \
                 printf("\"}\n"); \
-                fclose(stderr_file); \
+                if (record) { \
+                    fclose(stderr_file); \
+                    FILE* stderr_file = fopen(stderr_filename, "w"); \
+                    rewind(r.stderr_fp); \
+                    spz_print_stream_to_file(stderr_fd, stderr_file); \
+                    fclose(stderr_file); \
+                } else { \
+                    fclose(stderr_file); \
+                } \
             } \
         } \
         break; \
