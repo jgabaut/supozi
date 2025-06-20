@@ -30,7 +30,7 @@
 
 #define SPZ_MAJOR 0 /**< Represents current major release.*/
 #define SPZ_MINOR 2 /**< Represents current minor release.*/
-#define SPZ_PATCH 0 /**< Represents current patch release.*/
+#define SPZ_PATCH 1 /**< Represents current patch release.*/
 
 /**
  * Defines current API version number from SPZ_MAJOR, SPZ_MINOR and SPZ_PATCH.
@@ -950,6 +950,7 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
                 int stdout_record_fd = fileno(stdout_file); \
                 spz_print_stream_to_file(stdout_record_fd, stdout); \
                 printf("\"}\nFound: {\"\n"); \
+                rewind(r.stdout_fp); \
                 spz_print_stream_to_file(stdout_fd, stdout); \
                 printf("\"}\n"); \
                 if (record) { \
@@ -987,6 +988,7 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
                 int stderr_record_fd = fileno(stderr_file); \
                 spz_print_stream_to_file(stderr_record_fd, stdout); \
                 printf("\"}\nFound: {\"\n"); \
+                rewind(r.stderr_fp); \
                 spz_print_stream_to_file(stderr_fd, stdout); \
                 printf("\"}\n"); \
                 if (record) { \
