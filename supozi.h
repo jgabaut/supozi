@@ -150,7 +150,9 @@ typedef bool (*test_bool_fn)(void); /**< Used to select a test function returnin
                 spz_usage(argv[0]); \
                 return 0; \
             } else if (!strcmp(argv[1], "record")) { \
-                return run_tests_record(REGISTER_ALL_TESTS_PIPED, 1, SPZ_STDOUT_SUFFIX, SPZ_STDERR_SUFFIX); \
+                return run_tests_record(REGISTER_ALL_TESTS_PIPED, 1, 0, SPZ_STDOUT_SUFFIX, SPZ_STDERR_SUFFIX); \
+            } else if (!strcmp(argv[1], "check")) { \
+                return run_tests_record(REGISTER_ALL_TESTS_PIPED, 0, 1, SPZ_STDOUT_SUFFIX, SPZ_STDERR_SUFFIX); \
             } else { \
                 char namebuf[FILENAME_MAX] = {0}; \
                 for (int i=0; i < SPZ_TEST_REGISTRY__.suites_count+1; i++) { \
@@ -366,13 +368,13 @@ void register_test_suite_toreg(TestRegistry *tr, const char* name);
 int run_test(Test t);
 // Functions to run all tests in a suite
 int run_suite(TestSuite suite, int piped);
-int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix);
+int run_suite_record(TestSuite suite, int piped, int record, int checked, const char* stdout_record_suffix, const char* stderr_record_suffix);
 // Functions to run all tests in global SPZ_TEST_REGISTRY__
 int run_tests(int piped);
-int run_tests_record(int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix);
+int run_tests_record(int piped, int record, int checked, const char* stdout_record_suffix, const char* stderr_record_suffix);
 // Functions to run all tests in a specific registry
 int run_testregistry(TestRegistry tr, int piped);
-int run_testregistry_record(TestRegistry tr, int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix);
+int run_testregistry_record(TestRegistry tr, int piped, int record, int checked, const char* stdout_record_suffix, const char* stderr_record_suffix);
 
 #ifndef SPZ_NOPIPE
 
@@ -948,6 +950,7 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
             if (!stdout_file) { \
                 fprintf(stderr, "Failed opening stdout record at {%s}\n", stdout_filename); \
             } else { \
+                r.exit_code = -1; \
                 printf("Expected: {\"\n"); \
                 int stdout_record_fd = fileno(stdout_file); \
                 spz_print_stream_to_file(stdout_record_fd, stdout); \
@@ -988,6 +991,7 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
             if (!stderr_file) { \
                 fprintf(stderr, "Failed opening stderr record at {%s}\n", stderr_filename); \
             } else { \
+                r.exit_code = -1; \
                 printf("Expected: {\"\n"); \
                 int stderr_record_fd = fileno(stderr_file); \
                 spz_print_stream_to_file(stderr_record_fd, stdout); \
@@ -1019,9 +1023,7 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
         } \
         break; \
     } \
-    fclose(r.stdout_fp); \
-    fclose(r.stderr_fp); \
-    *res = r.exit_code; \
+    *res = r; \
 } while (0)
 
 #endif // SPZ_NOPIPE
@@ -1035,7 +1037,7 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
  * @return 0 for success or number of errors occurred.
  */
 int run_suite(TestSuite suite, int piped) {
-    return run_suite_record(suite, piped, 0, NULL, NULL);
+    return run_suite_record(suite, piped, 0, 0, NULL, NULL);
 }
 
 /**
@@ -1048,7 +1050,7 @@ int run_suite(TestSuite suite, int piped) {
  * @param stderr_record_suffix Suffix used for stderr record.
  * @return 0 for success or number of errors occurred.
  */
-int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix) {
+int run_suite_record(TestSuite suite, int piped, int record, int checked, const char* stdout_record_suffix, const char* stderr_record_suffix) {
     int failures = 0;
     int successes = 0;
 #ifndef SPZ_NOPIPE
@@ -1066,8 +1068,32 @@ int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_
         fflush(stdout);
 #ifndef SPZ_NOPIPE
         if (piped > 0) {
-            TestResult res = run_test_piped(suite.tests[i]);
-            if (res.exit_code != 0) {
+            TestResult res = {0};
+            bool matched = false;
+            if (checked > 0) {
+                char stdout_pathbuf[FILENAME_MAX] = {0};
+                const char* stdout_pb_suffix = NULL;
+                if (!stdout_record_suffix) {
+                    stdout_pb_suffix = ".stdout";
+                } else {
+                    stdout_pb_suffix = stdout_record_suffix;
+                }
+                sprintf(stdout_pathbuf, ".%s%s%s", SPZ_PATH_SEPARATOR, suite.tests[i].name, stdout_pb_suffix);
+                char stderr_pathbuf[FILENAME_MAX] = {0};
+                const char* stderr_pb_suffix = NULL;
+                if (!stderr_record_suffix) {
+                    stderr_pb_suffix = ".stderr";
+                } else {
+                    stderr_pb_suffix = stderr_record_suffix;
+                }
+                sprintf(stderr_pathbuf, ".%s%s%s", SPZ_PATH_SEPARATOR, suite.tests[i].name, stderr_pb_suffix);
+                spz_run_checked(suite.tests[i], &res, &matched, record, stdout_pathbuf, stderr_pathbuf);
+                rewind(res.stdout_fp);
+                rewind(res.stderr_fp);
+            } else {
+                res = run_test_piped(suite.tests[i]);
+            }
+            if (res.exit_code != 0 || (checked > 0 && !matched)) {
                 printf("\033[0;31mFAILED\033[0m\n");
                 exit_codes[failures] = res.exit_code;
                 error_streams[failures][0] = res.stdout_fp;
@@ -1171,7 +1197,7 @@ int run_suite_record(TestSuite suite, int piped, int record, const char* stdout_
  * @return 0 for success or number of errors occurred.
  */
 int run_tests(int piped) {
-    return run_tests_record(piped, 0, NULL, NULL);
+    return run_tests_record(piped, 0, 0, NULL, NULL);
 }
 
 /**
@@ -1184,8 +1210,8 @@ int run_tests(int piped) {
  * @param stderr_record_suffix Suffix used for stderr record.
  * @return 0 for success or number of errors occurred.
  */
-int run_tests_record(int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix) {
-    return run_testregistry_record(SPZ_TEST_REGISTRY__, piped, record, stdout_record_suffix, stderr_record_suffix);
+int run_tests_record(int piped, int record, int checked, const char* stdout_record_suffix, const char* stderr_record_suffix) {
+    return run_testregistry_record(SPZ_TEST_REGISTRY__, piped, record, checked, stdout_record_suffix, stderr_record_suffix);
 }
 
 /**
@@ -1196,7 +1222,7 @@ int run_tests_record(int piped, int record, const char* stdout_record_suffix, co
  * @return 0 for success or number of errors occurred.
  */
 int run_testregistry(TestRegistry tr, int piped) {
-    return run_testregistry_record(tr, piped, 0, NULL, NULL);
+    return run_testregistry_record(tr, piped, 0, 0, NULL, NULL);
 }
 
 /**
@@ -1208,13 +1234,13 @@ int run_testregistry(TestRegistry tr, int piped) {
  * @param stderr_record_suffix Suffix used for stderr record.
  * @return 0 for success or number of errors occurred.
  */
-int run_testregistry_record(TestRegistry tr, int piped, int record, const char* stdout_record_suffix, const char* stderr_record_suffix) {
+int run_testregistry_record(TestRegistry tr, int piped, int record, int checked, const char* stdout_record_suffix, const char* stderr_record_suffix) {
     int failures = 0;
     printf("Running all test suites...\n");
     for (int i = 0; i < tr.suites_count+1; i++) {
         TestSuite suite = tr.suites[i];
         printf("[  Suite  ] suite %s, %d tests\n", suite.name, suite.test_count);
-        int res = run_suite_record(suite, piped, record, stdout_record_suffix, stderr_record_suffix);
+        int res = run_suite_record(suite, piped, record, checked, stdout_record_suffix, stderr_record_suffix);
         if (res > 0) {
             printf("[ FAILED  ] Failures: {%d}\n", res);
         } else {
