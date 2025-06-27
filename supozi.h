@@ -30,7 +30,7 @@
 
 #define SPZ_MAJOR 0 /**< Represents current major release.*/
 #define SPZ_MINOR 2 /**< Represents current minor release.*/
-#define SPZ_PATCH 1 /**< Represents current patch release.*/
+#define SPZ_PATCH 2 /**< Represents current patch release.*/
 
 /**
  * Defines current API version number from SPZ_MAJOR, SPZ_MINOR and SPZ_PATCH.
@@ -932,16 +932,18 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
  * @see run_piped
  * @param x The Test/cmd to run.
  * @param res An int* to store the result of the checked test into.
+ * @param matched A bool* to store the result of mismatch into.
  * @param record A boolean to overwrite the record file on mismatch.
  * @param stdout_filename Path to the stdout record file.
  * @param stderr_filename Path to the stderr record file.
  */
-#define spz_run_checked(x, res, record, stdout_filename, stderr_filename) do { \
+#define spz_run_checked(x, res, matched, record, stdout_filename, stderr_filename) do { \
     TestResult r = run_piped(x); \
     int stdout_fd = fileno(r.stdout_fp); \
     int stdout_res = spz_compare_stream_to_file(stdout_fd, stdout_filename); \
     switch (stdout_res) { \
         case 0: { \
+            *matched = false; \
             FILE* stdout_file = fopen(stdout_filename, "rb"); \
             if (!stdout_file) { \
                 fprintf(stderr, "Failed opening stdout record at {%s}\n", stdout_filename); \
@@ -965,9 +967,10 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
             } \
         } \
         break; \
-        case 1: { /* Matched */ } \
+        case 1: { *matched = true; } \
         break; \
         case -1: { \
+            *matched = false; \
             printf("stdout record {%s} not found\n", stdout_filename); \
         } \
         break; \
@@ -980,6 +983,7 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
     int stderr_res = spz_compare_stream_to_file(stderr_fd, stderr_filename); \
     switch (stderr_res) { \
         case 0: { \
+            *matched = false; \
             FILE* stderr_file = fopen(stderr_filename, "rb"); \
             if (!stderr_file) { \
                 fprintf(stderr, "Failed opening stderr record at {%s}\n", stderr_filename); \
@@ -1003,9 +1007,10 @@ static inline int spz_compare_stream_to_file(int source, const char *filepath)
             } \
         } \
         break; \
-        case 1: { /* Matched */ } \
+        case 1: { *matched = true; } \
         break; \
         case -1: { \
+            *matched = false; \
             printf("stderr record {%s} not found\n", stderr_filename); \
         } \
         break; \
